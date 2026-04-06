@@ -1,0 +1,226 @@
+use std::path::{Path, PathBuf};
+use tauri::State;
+
+use crate::space::state::{mark_recent_local_change, RecentLocalChanges};
+use crate::{index, paths, space::SpaceState, utils};
+
+use super::super::helpers::deny_hidden_rel_path;
+use super::trash::move_path_to_trash;
+
+fn remove_markdown_notes_from_index(
+    root: &Path,
+    rel_path: &str,
+    abs_path: &Path,
+    recent_local_changes: &RecentLocalChanges,
+    is_dir: bool,
+) {
+    if is_dir {
+        let prefix = if rel_path.ends_with('/') {
+            rel_path.to_string()
+        } else {
+            format!("{rel_path}/")
+        };
+        if let Ok(conn) = index::open_db(root) {
+            if let Ok(mut stmt) = conn.prepare("SELECT id FROM notes WHERE id = ? OR id LIKE ?") {
+                let pattern = format!("{prefix}%");
+                if let Ok(rows) =
+                    stmt.query_map([rel_path, pattern.as_str()], |row| row.get::<_, String>(0))
+                {
+                    for note_id in rows.filter_map(|row| row.ok()) {
+                        mark_recent_local_change(recent_local_changes, &note_id);
+                        let _ = index::remove_note(root, &note_id);
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    if utils::is_markdown_path(abs_path) {
+        mark_recent_local_change(recent_local_changes, rel_path);
+        let _ = index::remove_note(root, rel_path);
+    }
+}
+
+#[tauri::command]
+pub async fn space_create_dir(state: State<'_, SpaceState>, path: String) -> Result<(), String> {
+    let root = state.current_root()?;
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let rel = PathBuf::from(&path);
+        deny_hidden_rel_path(&rel)?;
+        let abs = paths::join_under(&root, &rel)?;
+        std::fs::create_dir_all(abs).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn space_resolve_abs_path(
+    state: State<'_, SpaceState>,
+    path: String,
+) -> Result<String, String> {
+    let root = state.current_root()?;
+    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+        let rel = PathBuf::from(&path);
+        deny_hidden_rel_path(&rel)?;
+        let abs = paths::join_under(&root, &rel)?;
+        if !abs.exists() {
+            return Err("path does not exist".to_string());
+        }
+        if !abs.is_file() {
+            return Err("path is not a file".to_string());
+        }
+        Ok(abs.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn space_rename_path(
+    state: State<'_, SpaceState>,
+    from_path: String,
+    to_path: String,
+) -> Result<(), String> {
+    let root = state.current_root()?;
+    let recent_local_changes = state.recent_local_changes();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let from_rel = PathBuf::from(&from_path);
+        let to_rel = PathBuf::from(&to_path);
+        deny_hidden_rel_path(&from_rel)?;
+        deny_hidden_rel_path(&to_rel)?;
+        let from_abs = paths::join_under(&root, &from_rel)?;
+        let to_abs = paths::join_under(&root, &to_rel)?;
+        if !from_abs.exists() {
+            return Err("source path does not exist".to_string());
+        }
+        if to_abs.exists() {
+            return Err("destination path already exists".to_string());
+        }
+        if let Some(parent) = to_abs.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let is_dir = from_abs.is_dir();
+        std::fs::rename(&from_abs, &to_abs).map_err(|e| e.to_string())?;
+        reindex_after_rename(
+            &root,
+            &from_path,
+            &to_path,
+            &to_abs,
+            is_dir,
+            &recent_local_changes,
+        );
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn reindex_after_rename(
+    root: &Path,
+    from_path: &str,
+    to_path: &str,
+    to_abs: &Path,
+    is_dir: bool,
+    recent_local_changes: &RecentLocalChanges,
+) {
+    if is_dir {
+        let prefix = if from_path.ends_with('/') {
+            from_path.to_string()
+        } else {
+            format!("{from_path}/")
+        };
+        let new_prefix = if to_path.ends_with('/') {
+            to_path.to_string()
+        } else {
+            format!("{to_path}/")
+        };
+        if let Ok(conn) = index::open_db(root) {
+            if let Ok(mut stmt) = conn.prepare("SELECT id FROM notes WHERE id LIKE ?") {
+                let pattern = format!("{prefix}%");
+                if let Ok(rows) = stmt.query_map([&pattern], |row| row.get::<_, String>(0)) {
+                    let old_ids: Vec<String> = rows.filter_map(|r| r.ok()).collect();
+                    for old_id in old_ids {
+                        let new_id = format!("{new_prefix}{}", &old_id[prefix.len()..]);
+                        mark_recent_local_change(recent_local_changes, &old_id);
+                        mark_recent_local_change(recent_local_changes, &new_id);
+                        let _ = index::remove_note(root, &old_id);
+                        let abs = root.join(&new_id);
+                        if let Ok(markdown) = std::fs::read_to_string(&abs) {
+                            let _ = index::index_note(root, &new_id, &markdown);
+                        }
+                    }
+                }
+            }
+        }
+    } else if utils::is_markdown_path(to_abs) {
+        mark_recent_local_change(recent_local_changes, from_path);
+        mark_recent_local_change(recent_local_changes, to_path);
+        let _ = index::remove_note(root, from_path);
+        if let Ok(markdown) = std::fs::read_to_string(to_abs) {
+            let _ = index::index_note(root, to_path, &markdown);
+        }
+    }
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn space_delete_path(
+    state: State<'_, SpaceState>,
+    path: String,
+    recursive: Option<bool>,
+) -> Result<(), String> {
+    let root = state.current_root()?;
+    let recent_local_changes = state.recent_local_changes();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let rel = PathBuf::from(&path);
+        if rel.as_os_str().is_empty() {
+            return Err("path is required".to_string());
+        }
+        deny_hidden_rel_path(&rel)?;
+        let abs = paths::join_under(&root, &rel)?;
+        let meta = std::fs::metadata(&abs).map_err(|e| e.to_string())?;
+        remove_markdown_notes_from_index(&root, &path, &abs, &recent_local_changes, meta.is_dir());
+        if meta.is_dir() {
+            if recursive.unwrap_or(false) {
+                move_path_to_trash(&abs)
+            } else {
+                Err("recursive delete must be confirmed for directories".to_string())
+            }
+        } else {
+            move_path_to_trash(&abs)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn space_relativize_path(
+    state: State<'_, SpaceState>,
+    abs_path: String,
+) -> Result<String, String> {
+    let root = state.current_root()?;
+    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+        let root = root.canonicalize().map_err(|e| e.to_string())?;
+        let abs_input = PathBuf::from(abs_path);
+        let abs = if abs_input.exists() {
+            abs_input.canonicalize().map_err(|e| e.to_string())?
+        } else {
+            let parent = abs_input
+                .parent()
+                .ok_or_else(|| "path has no parent directory".to_string())?;
+            let file_name = abs_input
+                .file_name()
+                .ok_or_else(|| "path has no file name".to_string())?;
+            let parent = parent.canonicalize().map_err(|e| e.to_string())?;
+            parent.join(file_name)
+        };
+        let rel = abs
+            .strip_prefix(&root)
+            .map_err(|_| "path is not inside the current space".to_string())?;
+        Ok(rel.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

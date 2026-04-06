@@ -1,0 +1,58 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+	--color-background: var(--bg-primary);
+	--color-foreground: var(--text-primary);
+	--color-card: color-mix(in srgb, var(--bg-primary) 94%, var(--bg-secondary));
+	--color-card-foreground: var(--text-primary);
+	--color-popover: color-mix(
+		in srgb,
+		var(--bg-primary) 96%,
+		var(--bg-secondary)
+	);
+	--color-popover-foreground: var(--text-primary);
+	--color-primary: var(--interactive-accent);
+	--color-primary-foreground: var(--text-inverse);
+	--color-secondary: var(--bg-secondary);
+	--color-secondary-foreground: var(--text-primary);
+	--color-muted: var(--bg-secondary);
+	--color-muted-foreground: var(--text-secondary);
+	--color-accent: var(--bg-hover);
+	--color-accent-foreground: var(--text-primary);
+	--color-destructive: var(--status-danger-fg);
+	--color-destructive-foreground: var(--text-inverse);
+	--color-border: var(--border-default);
+	--color-input: var(--border-default);
+	--color-ring: var(--interactive-accent);
+	--radius-sm: var(--radius-4);
+	--radius-md: var(--radius-6);
+	--radius-lg: var(--radius-10);
+	--radius-xl: var(--radius-14);
+	--color-sidebar-ring: var(--interactive-accent);
+	--color-sidebar-border: var(--border-default);
+	--color-sidebar-accent-foreground: var(--text-primary);
+	--color-sidebar-accent: var(--bg-hover);
+	--color-sidebar-primary-foreground: var(--text-inverse);
+	--color-sidebar-primary: var(--interactive-accent);
+	--color-sidebar-foreground: var(--text-primary);
+	--color-sidebar: var(--bg-sidebar);
+}
+
+:root {
+	--popover: color-mix(in srgb, var(--bg-primary) 96%, var(--bg-secondary));
+	--popover-foreground: var(--text-primary);
+	--border: var(--border-default);
+	--radius: var(--radius-md);
+}
+
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+	}
+	body {
+		@apply bg-background text-foreground;
+	}
+}

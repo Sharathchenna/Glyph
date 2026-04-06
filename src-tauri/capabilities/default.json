@@ -1,0 +1,29 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "default",
+	"description": "Capability for the main window",
+	"windows": ["main", "settings"],
+	"permissions": [
+		"core:default",
+		"core:window:allow-close",
+		"core:window:allow-create",
+		"core:window:allow-start-dragging",
+		"core:window:allow-set-focus",
+		"core:window:allow-show",
+		"dialog:default",
+		"notification:default",
+		{
+			"identifier": "opener:allow-open-path",
+			"allow": [
+				{ "path": "$HOME/**" },
+				{ "path": "$DOWNLOAD/**" },
+				{ "path": "$DOCUMENT/**" },
+				{ "path": "$DESKTOP/**" }
+			]
+		},
+		"opener:default",
+		"process:allow-restart",
+		"store:default",
+		"updater:default"
+	]
+}

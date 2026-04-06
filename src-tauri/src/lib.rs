@@ -1,0 +1,510 @@
+mod ai_codex;
+mod ai_rig;
+mod databases;
+mod glyph_paths;
+mod index;
+mod io_atomic;
+mod license;
+mod links;
+mod net;
+mod note_export;
+mod notes;
+mod paths;
+mod space;
+mod space_fs;
+mod system_fonts;
+pub(crate) mod utils;
+
+use serde::Serialize;
+use tauri::menu::{
+    Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
+};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
+use tracing::warn;
+
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+
+use tauri::{PhysicalPosition, PhysicalSize, Position, Size};
+
+fn init_tracing() {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,tauri=info,glyph_lib=info"));
+
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .try_init();
+}
+
+#[derive(Serialize)]
+struct AppInfo {
+    name: String,
+    version: String,
+    identifier: String,
+}
+
+#[tauri::command]
+fn greet(name: &str) -> String {
+    format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn ping() -> &'static str {
+    "pong"
+}
+
+#[tauri::command]
+fn app_info(app: tauri::AppHandle) -> AppInfo {
+    let package = app.package_info();
+    let config = app.config();
+    AppInfo {
+        name: package.name.clone(),
+        version: package.version.to_string(),
+        identifier: config.identifier.clone(),
+    }
+}
+
+#[tauri::command]
+fn system_fonts_list() -> Result<Vec<String>, String> {
+    system_fonts::list_system_font_families()
+}
+
+#[tauri::command]
+fn system_monospace_fonts_list() -> Result<Vec<String>, String> {
+    system_fonts::list_monospace_font_families()
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    init_tracing();
+
+    tauri::Builder::default()
+        .menu(|app| {
+            #[cfg(target_os = "macos")]
+            let app_about = MenuItem::with_id(
+                app,
+                "app.about",
+                format!("About {}", app.package_info().name),
+                true,
+                None::<&str>,
+            )?;
+            #[cfg(target_os = "macos")]
+            let app_settings =
+                MenuItem::with_id(app, "app.settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+
+            #[cfg(target_os = "macos")]
+            let app_menu = Submenu::with_items(
+                app,
+                app.package_info().name.clone(),
+                true,
+                &[
+                    &app_about,
+                    &app_settings,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::services(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::hide(app, None)?,
+                    &PredefinedMenuItem::hide_others(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::quit(app, None)?,
+                ],
+            )?;
+
+            let open_space =
+                MenuItem::with_id(app, "space.open", "Open Space…", true, Some("CmdOrCtrl+O"))?;
+            let create_space = MenuItem::with_id(
+                app,
+                "space.create",
+                "New Space…",
+                true,
+                Some("CmdOrCtrl+Shift+N"),
+            )?;
+            let close_space =
+                MenuItem::with_id(app, "space.close", "Close Space", true, None::<&str>)?;
+            let reveal_space = MenuItem::with_id(
+                app,
+                "space.reveal",
+                "Show Space in Finder",
+                true,
+                None::<&str>,
+            )?;
+            let open_space_settings =
+                MenuItem::with_id(app, "space.settings", "Space Settings…", true, None::<&str>)?;
+            let new_note =
+                MenuItem::with_id(app, "file.new_note", "New Note", true, Some("CmdOrCtrl+N"))?;
+            let create_from_template = MenuItem::with_id(
+                app,
+                "file.create_from_template",
+                "Create From Template",
+                true,
+                Some("CmdOrCtrl+Shift+M"),
+            )?;
+            let open_daily_note = MenuItem::with_id(
+                app,
+                "file.open_daily_note",
+                "Open Daily Note",
+                true,
+                Some("CmdOrCtrl+Shift+D"),
+            )?;
+            let save_note =
+                MenuItem::with_id(app, "file.save_note", "Save", true, Some("CmdOrCtrl+S"))?;
+            let export_html = MenuItem::with_id(
+                app,
+                "file.export_html",
+                "Export as HTML…",
+                true,
+                None::<&str>,
+            )?;
+            let close_tab = MenuItem::with_id(
+                app,
+                "file.close_tab",
+                "Close Tab",
+                true,
+                Some("CmdOrCtrl+W"),
+            )?;
+            let toggle_ai = MenuItem::with_id(
+                app,
+                "ai.toggle",
+                "Toggle AI Pane",
+                true,
+                Some("CmdOrCtrl+Shift+A"),
+            )?;
+            let close_ai = MenuItem::with_id(app, "ai.close", "Close AI Pane", true, None::<&str>)?;
+            let attach_current_note = MenuItem::with_id(
+                app,
+                "ai.attach_current_note",
+                "Send Current Note to AI",
+                true,
+                Some("CmdOrCtrl+Alt+A"),
+            )?;
+            let attach_all_open_notes = MenuItem::with_id(
+                app,
+                "ai.attach_all_open_notes",
+                "Send All Open Notes to AI",
+                true,
+                Some("CmdOrCtrl+Alt+Shift+A"),
+            )?;
+            let open_ai_settings =
+                MenuItem::with_id(app, "ai.settings", "AI Settings…", true, None::<&str>)?;
+
+            let file_menu = Submenu::with_items(
+                app,
+                "File",
+                true,
+                &[
+                    &new_note,
+                    &create_from_template,
+                    &open_daily_note,
+                    &PredefinedMenuItem::separator(app)?,
+                    &save_note,
+                    &export_html,
+                    &close_tab,
+                ],
+            )?;
+
+            let ai_menu = Submenu::with_items(
+                app,
+                "AI",
+                true,
+                &[
+                    &toggle_ai,
+                    &close_ai,
+                    &PredefinedMenuItem::separator(app)?,
+                    &attach_current_note,
+                    &attach_all_open_notes,
+                    &PredefinedMenuItem::separator(app)?,
+                    &open_ai_settings,
+                ],
+            )?;
+
+            let space_menu = Submenu::with_items(
+                app,
+                "Space",
+                true,
+                &[
+                    &create_space,
+                    &open_space,
+                    &PredefinedMenuItem::separator(app)?,
+                    &close_space,
+                    &reveal_space,
+                    &PredefinedMenuItem::separator(app)?,
+                    &open_space_settings,
+                ],
+            )?;
+
+            let edit_menu = Submenu::with_items(
+                app,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app, None)?,
+                    &PredefinedMenuItem::redo(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::cut(app, None)?,
+                    &PredefinedMenuItem::copy(app, None)?,
+                    &PredefinedMenuItem::paste(app, None)?,
+                    &PredefinedMenuItem::select_all(app, None)?,
+                ],
+            )?;
+
+            let window_menu = Submenu::with_id_and_items(
+                app,
+                WINDOW_SUBMENU_ID,
+                "Window",
+                true,
+                &[
+                    &PredefinedMenuItem::minimize(app, None)?,
+                    &PredefinedMenuItem::maximize(app, None)?,
+                    #[cfg(target_os = "macos")]
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::close_window(app, None)?,
+                ],
+            )?;
+
+            let help_menu = Submenu::with_id_and_items(
+                app,
+                HELP_SUBMENU_ID,
+                "Help",
+                true,
+                &[
+                    #[cfg(not(target_os = "macos"))]
+                    &PredefinedMenuItem::about(app, None, None)?,
+                ],
+            )?;
+
+            Menu::with_items(
+                app,
+                &[
+                    #[cfg(target_os = "macos")]
+                    &app_menu,
+                    &file_menu,
+                    &edit_menu,
+                    &ai_menu,
+                    &space_menu,
+                    &window_menu,
+                    &help_menu,
+                ],
+            )
+        })
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "file.new_note" => {
+                let _ = app.emit("menu:new_note", ());
+            }
+            "file.create_from_template" => {
+                let _ = app.emit("menu:create_from_template", ());
+            }
+            "file.open_daily_note" => {
+                let _ = app.emit("menu:open_daily_note", ());
+            }
+            "file.save_note" => {
+                let _ = app.emit("menu:save_note", ());
+            }
+            "file.export_html" => {
+                let _ = app.emit("menu:export_html", ());
+            }
+            "file.close_tab" => {
+                let _ = app.emit("menu:close_tab", ());
+            }
+            "space.open" => {
+                let _ = app.emit("menu:open_space", ());
+            }
+            "space.create" => {
+                let _ = app.emit("menu:create_space", ());
+            }
+            "space.close" => {
+                let _ = app.emit("menu:close_space", ());
+            }
+            "space.reveal" => {
+                let _ = app.emit("menu:reveal_space", ());
+            }
+            "space.settings" => {
+                let _ = app.emit("menu:open_space_settings", ());
+            }
+            "app.about" => {
+                let _ = app.emit("menu:open_about", ());
+            }
+            "app.settings" => {
+                let _ = app.emit("menu:open_settings", ());
+            }
+            "ai.toggle" => {
+                let _ = app.emit("menu:toggle_ai", ());
+            }
+            "ai.close" => {
+                let _ = app.emit("menu:close_ai", ());
+            }
+            "ai.attach_current_note" => {
+                let _ = app.emit("menu:ai_attach_current_note", ());
+            }
+            "ai.attach_all_open_notes" => {
+                let _ = app.emit("menu:ai_attach_all_open_notes", ());
+            }
+            "ai.settings" => {
+                let _ = app.emit("menu:open_ai_settings", ());
+            }
+            _ => {}
+        })
+        .setup(|app| {
+            ai_rig::commands::refresh_provider_support_on_startup(app.handle().clone());
+
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(Some(monitor)) = window.current_monitor() {
+                    let monitor_size = monitor.size();
+                    let monitor_pos = monitor.position();
+                    let width = ((monitor_size.width as f64) * 0.8).round() as u32;
+                    let height = ((monitor_size.height as f64) * 0.8).round() as u32;
+                    let _ = window.set_size(Size::Physical(PhysicalSize::new(width, height)));
+                    let x = monitor_pos.x + ((monitor_size.width as i32 - width as i32) / 2);
+                    let y = monitor_pos.y + ((monitor_size.height as i32 - height as i32) / 2);
+                    let _ = window.set_position(Position::Physical(PhysicalPosition::new(x, y)));
+                }
+            }
+
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Err(e) =
+                        apply_vibrancy(&window, NSVisualEffectMaterial::Sidebar, None, Some(6.0))
+                    {
+                        warn!("Failed to apply vibrancy to main window: {e}");
+                    }
+                } else {
+                    warn!("Main window not found during setup");
+                }
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "settings" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+
+            #[cfg(target_os = "macos")]
+            if window.label() == "main" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    // Keep app alive on macOS when the last window is closed.
+                    // Dock activation can then restore this window.
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
+        .manage(ai_rig::AiState::default())
+        .manage(ai_codex::state::CodexState::default())
+        .manage(space::SpaceState::default())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            ping,
+            app_info,
+            system_fonts_list,
+            system_monospace_fonts_list,
+            license::commands::license_bootstrap_status,
+            license::commands::license_activate,
+            license::commands::license_clear_local,
+            ai_rig::commands::ai_profiles_list,
+            ai_rig::commands::ai_active_profile_get,
+            ai_rig::commands::ai_active_profile_set,
+            ai_rig::commands::ai_profile_upsert,
+            ai_rig::commands::ai_profile_delete,
+            ai_rig::commands::ai_secret_set,
+            ai_rig::commands::ai_secret_clear,
+            ai_rig::commands::ai_secret_status,
+            ai_rig::commands::ai_secret_list,
+            ai_rig::commands::ai_provider_support,
+            ai_rig::commands::ai_audit_mark,
+            ai_rig::commands::ai_chat_start,
+            ai_rig::commands::ai_chat_cancel,
+            ai_rig::commands::ai_chat_history_list,
+            ai_rig::commands::ai_chat_history_get,
+            ai_codex::commands::codex_account_read,
+            ai_codex::commands::codex_login_start,
+            ai_codex::commands::codex_login_complete,
+            ai_codex::commands::codex_logout,
+            ai_codex::commands::codex_rate_limits_read,
+            ai_codex::commands::codex_chat_start,
+            ai_codex::commands::codex_chat_cancel,
+            ai_rig::context::ai_context_index,
+            ai_rig::context::ai_context_build,
+            ai_rig::context::ai_context_resolve_paths,
+            ai_rig::models::ai_models_list,
+            databases::commands::databases_list,
+            databases::commands::databases_get,
+            databases::commands::databases_create,
+            databases::commands::databases_update,
+            databases::commands::databases_delete,
+            databases::commands::databases_duplicate,
+            databases::commands::databases_query_rows,
+            databases::commands::databases_update_cell,
+            databases::commands::databases_create_row,
+            databases::commands::databases_preview_context,
+            index::commands::index_rebuild,
+            index::commands::search,
+            index::commands::search_advanced,
+            index::commands::search_parse_and_run,
+            index::commands::search_with_tags,
+            index::commands::recent_notes,
+            index::commands::tags_list,
+            index::commands::tag_notes,
+            index::commands::tasks_query,
+            index::commands::task_set_checked,
+            index::commands::task_set_dates,
+            index::commands::task_dates_by_ordinal,
+            index::commands::task_update_by_ordinal,
+            index::commands::backlinks,
+            links::commands::link_preview,
+            space_fs::list::space_list_dirs,
+            space_fs::list::space_list_dir,
+            space_fs::list::space_list_markdown_files,
+            space_fs::list::space_list_files,
+            space_fs::link_ops::space_resolve_wikilink,
+            space_fs::link_ops::space_resolve_markdown_link,
+            space_fs::link_ops::space_suggest_links,
+            space_fs::summary::space_dir_children_summary,
+            space_fs::summary::space_dir_recent_entries,
+            space_fs::read_write::text::space_read_text,
+            space_fs::read_write::text::space_read_texts_batch,
+            space_fs::read_write::preview::space_read_text_preview,
+            space_fs::read_write::preview::space_read_binary_preview,
+            space_fs::read_write::text::space_write_text,
+            space_fs::read_write::text::space_open_or_create_text,
+            space_fs::read_write::paths::space_create_dir,
+            space_fs::read_write::paths::space_rename_path,
+            space_fs::read_write::paths::space_delete_path,
+            space_fs::read_write::paths::space_resolve_abs_path,
+            space_fs::read_write::paths::space_relativize_path,
+            notes::commands::notes_list,
+            notes::commands::note_create,
+            notes::commands::note_read,
+            notes::commands::note_write,
+            notes::commands::note_delete,
+            note_export::commands::export_write_text,
+            notes::properties::note_frontmatter_parse_properties,
+            notes::properties::note_frontmatter_render_properties,
+            notes::attachments::note_attach_file,
+            space::commands::space_create,
+            space::commands::space_open,
+            space::commands::space_get_current,
+            space::commands::space_close
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen { .. } = event {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            }
+        });
+}

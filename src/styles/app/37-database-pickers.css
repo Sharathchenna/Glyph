@@ -1,0 +1,506 @@
+.databasePickerTrigger {
+	width: min(100%, 320px);
+	max-width: 320px;
+	min-height: 44px;
+	justify-content: flex-start;
+	padding: 8px 10px;
+	gap: 10px;
+	border-radius: var(--radius-lg);
+	border-color: color-mix(in srgb, var(--border-light) 78%, transparent);
+	background: color-mix(in srgb, var(--bg-primary) 88%, transparent);
+	align-self: flex-start;
+}
+
+.databaseDialogCompact .databasePickerTrigger {
+	min-height: 38px;
+	padding: 6px 10px;
+	border-color: color-mix(in srgb, var(--border-light) 60%, transparent);
+	background: color-mix(in srgb, var(--bg-primary) 96%, transparent);
+}
+
+.databasePickerTrigger:hover {
+	border-color: var(--border-default);
+	background: var(--bg-hover);
+}
+
+.databasePickerTriggerIcon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: var(--radius-md);
+	background: color-mix(in srgb, var(--bg-secondary) 76%, transparent);
+	color: var(--text-secondary);
+	flex: 0 0 auto;
+}
+
+.databaseDialogCompact .databasePickerTriggerIcon {
+	width: 22px;
+	height: 22px;
+	background: transparent;
+}
+
+.databasePickerTriggerText {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
+}
+
+.databasePickerTriggerLabel {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.88rem;
+	font-weight: var(--font-semibold);
+	color: var(--text-primary);
+}
+
+.databasePickerTriggerMeta {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.76rem;
+	color: var(--text-tertiary);
+}
+
+.databaseDialogCompact .databasePickerTriggerMeta {
+	display: none;
+}
+
+.databasePickerPopover {
+	width: min(420px, calc(100vw - 2rem));
+	border-radius: var(--radius-lg);
+	border-color: var(--border-light);
+	padding: 12px;
+	background: var(--bg-primary);
+	box-shadow: var(--shadow-md);
+	pointer-events: auto;
+}
+
+.databaseDialogCompact .databasePickerPopover,
+.databaseDialogCompact .folderPickerPopover {
+	border-color: color-mix(in srgb, var(--border-light) 60%, transparent);
+	box-shadow: var(--shadow-sm);
+}
+
+.databaseColumnIconPopover {
+	width: min(380px, calc(100vw - 2rem));
+	padding-bottom: 10px;
+	pointer-events: auto;
+}
+
+.databasePickerHeader {
+	gap: 4px;
+	padding: 2px 2px 6px;
+}
+
+.databaseDialogCompact .databasePickerEyebrow,
+.databaseDialogCompact .databasePickerHeader [data-slot="popover-description"] {
+	display: none;
+}
+
+.databaseDialogCompact .databasePickerHeader {
+	padding-bottom: 4px;
+}
+
+.databasePickerEyebrow {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 0.68rem;
+	font-weight: var(--font-bold);
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--text-tertiary);
+}
+
+.databasePickerSearch {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+	padding: 7px 9px;
+	border-radius: var(--radius-md);
+	border: 1px solid color-mix(in srgb, var(--border-light) 76%, transparent);
+	background: color-mix(in srgb, var(--bg-primary) 88%, transparent);
+}
+
+.databasePickerSearch svg {
+	color: var(--text-tertiary);
+	flex: 0 0 auto;
+}
+
+.databasePickerSearch input {
+	border: 0;
+	box-shadow: none;
+	padding: 0;
+	height: 24px;
+	background: transparent;
+}
+
+.databasePickerSearch input:focus-visible {
+	outline: none;
+	box-shadow: none;
+}
+
+.databasePickerResults {
+	height: min(240px, 38vh);
+}
+
+.databasePickerList {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	padding: 0 4px 2px 2px;
+}
+
+.databasePickerOption {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	width: 100%;
+	padding: 8px 10px;
+	border: 1px solid color-mix(in srgb, var(--border-light) 76%, transparent);
+	border-radius: var(--radius-md);
+	background: color-mix(in srgb, var(--bg-primary) 88%, transparent);
+	text-align: left;
+	transition: border-color var(--transition-base), background-color
+		var(--transition-base);
+}
+
+.databasePickerOption:hover,
+.databasePickerOption:focus-visible,
+.databasePickerOption[data-active="true"] {
+	border-color: var(--border-default);
+	background: var(--bg-hover);
+}
+
+.databasePickerOption:focus-visible {
+	outline: 2px solid
+		color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+	outline-offset: 2px;
+}
+
+.databasePickerOptionMain {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.databasePickerOptionLabel,
+.databasePickerOptionPath {
+	font-size: 0.84rem;
+	color: var(--text-primary);
+}
+
+.databasePickerOptionLabel {
+	font-weight: var(--font-semibold);
+}
+
+.databasePickerOptionMeta,
+.databasePickerEmpty {
+	font-size: 0.76rem;
+	line-height: 1.45;
+	color: var(--text-tertiary);
+}
+
+.databasePickerOptionPath,
+.databasePickerOptionMeta {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.databasePickerOptionBadge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 26px;
+	height: 22px;
+	padding: 0 8px;
+	border-radius: var(--radius-sm);
+	border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+	background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
+	font-size: 0.72rem;
+	font-weight: var(--font-semibold);
+	color: var(--text-secondary);
+	flex: 0 0 auto;
+}
+
+.databasePickerEmpty {
+	padding: 8px 4px 2px;
+}
+
+/* ── Lean folder picker ── */
+
+.folderPickerPopover {
+	width: min(300px, calc(100vw - 2rem));
+	border-radius: var(--radius-lg);
+	border-color: var(--border-light);
+	padding: 8px;
+	background: var(--bg-primary);
+	box-shadow: var(--shadow-md);
+	pointer-events: auto;
+}
+
+.folderPickerBreadcrumbs {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 2px;
+	padding: 2px 4px 6px;
+}
+
+.folderPickerCrumbSegment {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	color: var(--text-quaternary);
+}
+
+.folderPickerCrumb {
+	padding: 2px 5px;
+	border-radius: var(--radius-xs);
+	font-size: 0.72rem;
+	color: var(--text-tertiary);
+}
+
+.folderPickerCrumb:hover {
+	color: var(--text-secondary);
+	background: var(--bg-hover);
+}
+
+.folderPickerCrumb[data-active="true"] {
+	color: var(--text-primary);
+	font-weight: var(--font-medium);
+}
+
+.folderPickerSearch {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 4px;
+	padding: 4px 8px;
+	border-radius: var(--radius-sm);
+	border: 1px solid color-mix(in srgb, var(--border-light) 60%, transparent);
+}
+
+.folderPickerSearch svg {
+	color: var(--text-quaternary);
+	flex: 0 0 auto;
+}
+
+.folderPickerSearch input {
+	border: 0;
+	box-shadow: none;
+	padding: 0;
+	height: 22px;
+	font-size: 0.78rem;
+	background: transparent;
+}
+
+.folderPickerSearch input:focus-visible {
+	outline: none;
+	box-shadow: none;
+}
+
+.folderPickerResults {
+	height: min(200px, 34vh);
+}
+
+.folderPickerList {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	padding: 2px;
+}
+
+.folderPickerSelect {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	padding: 5px 8px;
+	border-radius: var(--radius-sm);
+	font-size: 0.78rem;
+	font-weight: var(--font-medium);
+	color: var(--interactive-accent);
+	text-align: left;
+}
+
+.folderPickerSelect:hover {
+	background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+}
+
+.folderPickerSelect svg {
+	flex: 0 0 auto;
+	opacity: 0.7;
+}
+
+.folderPickerRow {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+	padding: 5px 8px;
+	border-radius: var(--radius-sm);
+	text-align: left;
+}
+
+.folderPickerRow:hover {
+	background: var(--bg-hover);
+}
+
+.folderPickerRowName {
+	font-size: 0.78rem;
+	color: var(--text-primary);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.folderPickerRow svg {
+	color: var(--text-quaternary);
+	flex: 0 0 auto;
+}
+
+.folderPickerEmpty {
+	padding: 6px 8px;
+	font-size: 0.76rem;
+	color: var(--text-tertiary);
+}
+
+/* Compact picker overrides inside database dropdown menus */
+[data-slot="dropdown-menu-content"].databasePickerMenu .databasePickerTrigger {
+	min-height: 28px;
+	padding: 4px 8px;
+	gap: 6px;
+	border-radius: var(--radius-sm);
+	font-size: 0.8rem;
+}
+
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	.databasePickerTriggerIcon {
+	width: 18px;
+	height: 18px;
+	background: transparent;
+}
+
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	.databasePickerTriggerLabel {
+	font-size: 0.8rem;
+	font-weight: var(--font-medium);
+}
+
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	.databasePickerTriggerMeta {
+	display: none;
+}
+
+[data-slot="dropdown-menu-content"].databasePickerMenu .databaseNativeSelect {
+	min-height: 28px;
+	padding: 0 26px 0 8px;
+	font-size: 0.8rem;
+	border-radius: var(--radius-sm);
+	background-position: calc(100% - 10px) 10px, calc(100% - 5px) 10px;
+	background-size: 5px 5px, 5px 5px;
+}
+
+/* Lighter icons inside dropdown menu items */
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	[data-slot="dropdown-menu-item"]
+	svg,
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	[data-slot="dropdown-menu-label"]
+	svg {
+	opacity: 0.45;
+	stroke-width: 1.5;
+}
+
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	[data-slot="dropdown-menu-item"]:is(:hover, [data-highlighted])
+	svg {
+	opacity: 0.7;
+}
+
+/* More breathing room between dropdown items */
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	[data-slot="dropdown-menu-item"] {
+	padding-block: 6px;
+}
+
+/* Subtler section headings */
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	[data-slot="dropdown-menu-label"] {
+	font-size: 0.7rem;
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-tertiary);
+	padding-block: 4px;
+	padding-inline: 8px;
+}
+
+/* Subtler dividers */
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	[data-slot="dropdown-menu-separator"] {
+	opacity: 0.4;
+}
+
+/* Proper padding inside dropdown menus */
+[data-slot="dropdown-menu-content"].databasePickerMenu {
+	padding: 6px;
+}
+
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	[data-slot="dropdown-menu-item"] {
+	width: 100%;
+	padding-inline: 8px;
+}
+
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	[data-slot="dropdown-menu-shortcut"] {
+	margin-left: auto;
+}
+
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	.databaseColumnDropdownShortcut {
+	display: inline-flex;
+	align-items: center;
+}
+
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	.databaseColumnDropdownDelete {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border: 0;
+	border-radius: var(--radius-xs);
+	background: transparent;
+	color: var(--text-tertiary);
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 140ms ease, color 140ms ease, background-color 140ms ease;
+}
+
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	.databaseColumnDropdownItem:is(:hover, [data-highlighted])
+	.databaseColumnDropdownDelete {
+	opacity: 1;
+}
+
+[data-slot="dropdown-menu-content"].databasePickerMenu
+	.databaseColumnDropdownDelete:hover {
+	background: color-mix(in srgb, var(--bg-secondary) 86%, transparent);
+	color: var(--text-primary);
+}

@@ -1,0 +1,27 @@
+{
+	"files": {
+		"ignore": [
+			".agents",
+			".claude",
+			"dist",
+			"src-tauri/gen",
+			"src-tauri/target",
+			"website/.astro",
+			"website/.vscode",
+			"website/dist",
+			"website/node_modules"
+		]
+	},
+	"formatter": {
+		"enabled": true
+	},
+	"organizeImports": {
+		"enabled": true
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true
+		}
+	}
+}

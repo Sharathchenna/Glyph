@@ -1,0 +1,247 @@
+name: Tauri Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: tauri-release-main
+  cancel-in-progress: false
+
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.gate.outputs.should_release }}
+    steps:
+      - name: Evaluate release marker
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if printf '%s' "${COMMIT_MESSAGE}" | grep -qi '\[release\]'; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-and-release:
+    needs: release-gate
+    if: needs.release-gate.outputs.should_release == 'true'
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Compute next version
+        id: version
+        run: |
+          set -euo pipefail
+
+          latest_tag="$(git tag -l 'v*' --sort=-v:refname | head -n1 || true)"
+          file_version="$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version")"
+          tag_version="${latest_tag#v}"
+          if [ -z "${latest_tag}" ]; then
+            tag_version="0.0.0"
+          fi
+
+          base_version="$(node -e '
+            const [a, b] = process.argv.slice(1);
+            const parse = (v) => v.split(".").map((x) => Number.parseInt(x, 10));
+            const av = parse(a);
+            const bv = parse(b);
+            const pickA =
+              av[0] > bv[0] ||
+              (av[0] === bv[0] && av[1] > bv[1]) ||
+              (av[0] === bv[0] && av[1] === bv[1] && av[2] >= bv[2]);
+            process.stdout.write(pickA ? a : b);
+          ' "${file_version}" "${tag_version}")"
+
+          IFS='.' read -r major minor patch <<< "${base_version}"
+          if ! [[ "${major}" =~ ^[0-9]+$ && "${minor}" =~ ^[0-9]+$ && "${patch}" =~ ^[0-9]+$ ]]; then
+            echo "Invalid base version: ${base_version}"
+            exit 1
+          fi
+
+          next_patch=$((patch + 1))
+          next_version="${major}.${minor}.${next_patch}"
+          next_tag="v${next_version}"
+
+          echo "latest_tag=${latest_tag}" >> "$GITHUB_OUTPUT"
+          echo "next_version=${next_version}" >> "$GITHUB_OUTPUT"
+          echo "next_tag=${next_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync version files
+        env:
+          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
+        run: |
+          set -euo pipefail
+
+          node -e '
+            const fs = require("fs");
+            const next = process.env.NEXT_VERSION;
+
+            const pkgPath = "package.json";
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+            pkg.version = next;
+            fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, "\t")}\n`);
+
+            const tauriPath = "src-tauri/tauri.conf.json";
+            const tauri = JSON.parse(fs.readFileSync(tauriPath, "utf8"));
+            tauri.version = next;
+            fs.writeFileSync(tauriPath, `${JSON.stringify(tauri, null, "\t")}\n`);
+          '
+
+          sed -i.bak -E "0,/^version = \"[^\"]+\"/s//version = \"${NEXT_VERSION}\"/" src-tauri/Cargo.toml
+          rm -f src-tauri/Cargo.toml.bak
+
+      - name: Generate release notes
+        env:
+          LATEST_TAG: ${{ steps.version.outputs.latest_tag }}
+          NEXT_TAG: ${{ steps.version.outputs.next_tag }}
+        run: node scripts/generate-release-notes.mjs
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format updated version files
+        run: pnpm exec biome format --write package.json src-tauri/tauri.conf.json src/generated/currentReleaseNotes.ts
+
+      - name: Validate
+        run: |
+          pnpm check
+          pnpm build
+          cd src-tauri && cargo check
+
+      - name: Build changelog
+        id: changelog
+        run: |
+          set -euo pipefail
+
+          delimiter="RELEASE_NOTES_$(date +%s)_$RANDOM"
+          {
+            echo "body<<${delimiter}"
+            cat RELEASE_NOTES.md
+            printf '\n%s\n' "${delimiter}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GLYPH_OFFICIAL_BUILD: "1"
+          GLYPH_GUMROAD_PRODUCT_ID: "jfc0rwnuPw7VuqCyw5ctTw=="
+          GLYPH_GUMROAD_PRODUCT_URL: "https://karatsidhu.gumroad.com/l/sqxfay"
+          GLYPH_SUPPORT_URL: "https://github.com/SidhuK/Glyph/issues"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_PROVIDER_SHORT_NAME: ${{ secrets.APPLE_PROVIDER_SHORT_NAME }}
+        with:
+          tagName: ${{ steps.version.outputs.next_tag }}
+          releaseName: "Glyph ${{ steps.version.outputs.next_tag }}"
+          releaseBody: ${{ steps.changelog.outputs.body }}
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+
+      - name: Update website download link
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
+          NEXT_TAG: ${{ steps.version.outputs.next_tag }}
+        run: |
+          set -euo pipefail
+
+          dmg_url="https://github.com/SidhuK/Glyph/releases/download/${NEXT_TAG}/Glyph_${NEXT_VERSION}_aarch64.dmg"
+
+          # Verify the asset actually exists before updating
+          status=$(curl -sL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${GITHUB_TOKEN}" "${dmg_url}")
+          if [ "${status}" -lt 200 ] || [ "${status}" -ge 400 ]; then
+            echo "DMG asset not found at ${dmg_url} (HTTP ${status}), skipping website update"
+            exit 0
+          fi
+
+          echo "DMG verified at ${dmg_url}"
+
+          cat > website/src/lib/site.ts << EOF
+          export const downloadUrl =
+          	"${dmg_url}";
+          EOF
+
+          # Clean up leading whitespace from heredoc
+          sed -i.bak 's/^          //' website/src/lib/site.ts && rm -f website/src/lib/site.ts.bak
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add website/src/lib/site.ts
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore(website): update download link to ${NEXT_TAG}"
+          git push
+
+      - name: Notify Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "HOMEBREW_TAP_DISPATCH_TOKEN is not configured."
+            exit 1
+          fi
+
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            https://api.github.com/repos/SidhuK/homebrew-glyph/dispatches \
+            -d '{"event_type":"glyph_release_published"}'

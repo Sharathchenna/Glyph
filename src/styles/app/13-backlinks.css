@@ -1,0 +1,76 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   TAGS
+   ───────────────────────────────────────────────────────────────────────────── */
+.tagsPane {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	padding: var(--space-2) var(--space-2)
+		calc(var(--sidebar-footer-overlay-height) + var(--space-2));
+}
+
+.sidebarSectionContent .tagsPane {
+	border-top: none;
+}
+
+.tagsHeader {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: var(--space-2) var(--space-2);
+}
+
+.tagsHeaderTitle {
+	font-size: var(--text-xs);
+	font-weight: var(--font-semibold);
+	color: var(--text-tertiary);
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+}
+
+.tagsList {
+	list-style: none;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 0 var(--space-1) var(--space-2) var(--space-1);
+	max-height: 220px;
+	overflow: auto;
+	flex: 1;
+}
+
+.sidebarSectionContent .tagsList {
+	max-height: none;
+}
+
+.tagsButton {
+	width: 100%;
+	justify-content: space-between;
+	padding: 0 var(--space-2);
+	height: 28px;
+	border-radius: var(--radius-md);
+}
+
+.tagsNameWrap {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+.tagsName {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.tagsCount {
+	color: var(--text-tertiary);
+	font-size: var(--text-xs);
+}
+
+.tagsEmpty {
+	padding: var(--space-2) var(--space-3) var(--space-3);
+	color: var(--text-tertiary);
+	font-size: var(--text-xs);
+}

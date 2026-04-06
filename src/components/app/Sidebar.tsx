@@ -1,0 +1,114 @@
+import { cn } from "@/lib/utils";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
+import { memo } from "react";
+import { useUILayoutContext } from "../../contexts";
+import { SidebarContent } from "./SidebarContent";
+import { SidebarHeader } from "./SidebarHeader";
+
+interface SidebarProps {
+	onToggleDir: (dirPath: string) => void;
+	onSelectDir: (dirPath: string) => void;
+	onOpenFile: (relPath: string) => void;
+	onNewNote: () => void;
+	onNewFileInDir: (dirPath: string) => void;
+	onCreateFromTemplateInDir: (dirPath: string) => void;
+	onNewDatabaseInDir: (dirPath: string) => Promise<string | null>;
+	onNewFolderInDir: (dirPath: string) => Promise<string | null>;
+	onRenameDir: (dirPath: string, nextName: string) => Promise<string | null>;
+	onDeletePath: (path: string, kind: "dir" | "file") => Promise<boolean>;
+	onSelectTag: (tag: string) => void;
+	sidebarCollapsed: boolean;
+	onToggleSidebar: () => void;
+	onOpenDailyNote: () => void;
+	isDailyNoteCreating: boolean;
+	onOpenTasks: () => void;
+	onOpenDatabases: (databaseId?: string | null) => void;
+	updateReady: boolean;
+	updateVersion: string | null;
+	onInstallUpdate: () => void;
+}
+
+export const Sidebar = memo(function Sidebar({
+	onToggleDir,
+	onSelectDir,
+	onOpenFile,
+	onNewNote,
+	onNewFileInDir,
+	onCreateFromTemplateInDir,
+	onNewDatabaseInDir,
+	onNewFolderInDir,
+	onRenameDir,
+	onDeletePath,
+	onSelectTag,
+	sidebarCollapsed,
+	onToggleSidebar,
+	onOpenDailyNote,
+	isDailyNoteCreating,
+	onOpenTasks,
+	onOpenDatabases,
+	updateReady,
+	updateVersion,
+	onInstallUpdate,
+}: SidebarProps) {
+	const { sidebarWidth } = useUILayoutContext();
+	const shouldReduceMotion = useReducedMotion();
+	const sidebarState = sidebarCollapsed ? "collapsed" : "expanded";
+
+	return (
+		<m.aside
+			data-slot="sidebar"
+			data-sidebar="sidebar"
+			data-state={sidebarState}
+			data-collapsible={sidebarCollapsed ? "offcanvas" : ""}
+			className={cn("sidebar", sidebarCollapsed && "sidebarCollapsed")}
+			style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}
+			layout
+			transition={
+				shouldReduceMotion
+					? { type: "tween", duration: 0 }
+					: { type: "spring", stiffness: 400, damping: 30 }
+			}
+		>
+			<AnimatePresence>
+				{!sidebarCollapsed && (
+					<m.div
+						key="sidebar-content"
+						data-slot="sidebar-inner"
+						className="sidebarContentRoot"
+						initial={shouldReduceMotion ? false : { opacity: 0 }}
+						animate={{ opacity: 1 }}
+						exit={shouldReduceMotion ? {} : { opacity: 0 }}
+						transition={
+							shouldReduceMotion ? { duration: 0 } : { duration: 0.15 }
+						}
+					>
+						<SidebarHeader
+							sidebarCollapsed={sidebarCollapsed}
+							onToggleSidebar={onToggleSidebar}
+							onNewNote={onNewNote}
+							updateReady={updateReady}
+							updateVersion={updateVersion}
+							onInstallUpdate={onInstallUpdate}
+						/>
+						<SidebarContent
+							onToggleDir={onToggleDir}
+							onSelectDir={onSelectDir}
+							onOpenFile={onOpenFile}
+							onNewFileInDir={onNewFileInDir}
+							onCreateFromTemplateInDir={onCreateFromTemplateInDir}
+							onNewDatabaseInDir={onNewDatabaseInDir}
+							onNewFolderInDir={onNewFolderInDir}
+							onRenameDir={onRenameDir}
+							onDeletePath={onDeletePath}
+							onSelectTag={onSelectTag}
+							onOpenDailyNote={onOpenDailyNote}
+							isDailyNoteCreating={isDailyNoteCreating}
+							onOpenTasks={onOpenTasks}
+							onOpenDatabases={onOpenDatabases}
+						/>
+					</m.div>
+				)}
+			</AnimatePresence>
+		</m.aside>
+	);
+});

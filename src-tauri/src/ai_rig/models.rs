@@ -1,0 +1,500 @@
+use tauri::{AppHandle, State};
+
+use super::helpers::{apply_extra_headers, http_client, parse_base_url};
+use super::local_secrets;
+use super::store::{ensure_default_profiles, read_store, store_path, write_store};
+use super::types::{AiModel, AiProviderKind, AiReasoningEffortOption};
+use crate::ai_codex::{state::CodexState, transport::rpc_call};
+use crate::space::SpaceState;
+
+#[derive(serde::Deserialize)]
+struct OpenAIModelsResp {
+    data: Vec<OpenAIModelItem>,
+}
+
+#[derive(serde::Deserialize)]
+struct OpenAIModelItem {
+    id: String,
+}
+
+async fn list_openai_like(
+    client: &reqwest::Client,
+    profile: &super::types::AiProfile,
+    api_key: &str,
+) -> Result<Vec<AiModel>, String> {
+    let base = parse_base_url(profile)?;
+    let url = base.join("models").map_err(|e| e.to_string())?;
+
+    let mut req = client.get(url);
+    req = apply_extra_headers(req, profile);
+    if !api_key.is_empty() {
+        req = req.bearer_auth(api_key);
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("model list failed ({status}): {text}"));
+    }
+
+    let parsed: OpenAIModelsResp = resp.json().await.map_err(|e| e.to_string())?;
+    let mut models: Vec<AiModel> = parsed
+        .data
+        .into_iter()
+        .map(|m| AiModel {
+            name: m.id.clone(),
+            id: m.id,
+            context_length: None,
+            description: None,
+            input_modalities: None,
+            output_modalities: None,
+            tokenizer: None,
+            prompt_pricing: None,
+            completion_pricing: None,
+            supported_parameters: None,
+            max_completion_tokens: None,
+            reasoning_effort: None,
+            default_reasoning_effort: None,
+        })
+        .collect();
+    models.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(models)
+}
+
+#[derive(serde::Deserialize)]
+struct OpenRouterResp {
+    data: Vec<OpenRouterModel>,
+}
+
+fn deserialize_context_length<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v: Option<serde_json::Value> = serde::Deserialize::deserialize(deserializer)?;
+    match v {
+        Some(serde_json::Value::Number(n)) => Ok(n.as_u64().and_then(|n| u32::try_from(n).ok())),
+        _ => Ok(None),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct OpenRouterArchitecture {
+    #[serde(default)]
+    input_modalities: Option<Vec<String>>,
+    #[serde(default)]
+    output_modalities: Option<Vec<String>>,
+    #[serde(default)]
+    tokenizer: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct OpenRouterPricing {
+    #[serde(default)]
+    prompt: Option<String>,
+    #[serde(default)]
+    completion: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct OpenRouterTopProvider {
+    #[serde(default)]
+    max_completion_tokens: Option<u32>,
+}
+
+#[derive(serde::Deserialize)]
+struct OpenRouterModel {
+    id: String,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_context_length")]
+    context_length: Option<u32>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    architecture: Option<OpenRouterArchitecture>,
+    #[serde(default)]
+    pricing: Option<OpenRouterPricing>,
+    #[serde(default)]
+    top_provider: Option<OpenRouterTopProvider>,
+    #[serde(default)]
+    supported_parameters: Option<Vec<String>>,
+}
+
+async fn list_openrouter(
+    client: &reqwest::Client,
+    profile: &super::types::AiProfile,
+    api_key: &str,
+) -> Result<Vec<AiModel>, String> {
+    let base = parse_base_url(profile)?;
+    let url = base.join("models").map_err(|e| e.to_string())?;
+
+    let mut req = client.get(url).bearer_auth(api_key);
+    req = apply_extra_headers(req, profile);
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("model list failed ({status}): {text}"));
+    }
+
+    let parsed: OpenRouterResp = resp.json().await.map_err(|e| e.to_string())?;
+    let mut models: Vec<AiModel> = parsed
+        .data
+        .into_iter()
+        .map(|m| {
+            let arch = m.architecture.as_ref();
+            let pricing = m.pricing.as_ref();
+            AiModel {
+                name: m.name.unwrap_or_else(|| m.id.clone()),
+                id: m.id,
+                context_length: m.context_length,
+                description: m.description,
+                input_modalities: arch.and_then(|a| a.input_modalities.clone()),
+                output_modalities: arch.and_then(|a| a.output_modalities.clone()),
+                tokenizer: arch.and_then(|a| a.tokenizer.clone()),
+                prompt_pricing: pricing.and_then(|p| p.prompt.clone()),
+                completion_pricing: pricing.and_then(|p| p.completion.clone()),
+                supported_parameters: m.supported_parameters,
+                max_completion_tokens: m.top_provider.and_then(|t| t.max_completion_tokens),
+                reasoning_effort: None,
+                default_reasoning_effort: None,
+            }
+        })
+        .collect();
+    models.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(models)
+}
+
+#[derive(serde::Deserialize)]
+struct AnthropicResp {
+    data: Vec<AnthropicModel>,
+}
+
+#[derive(serde::Deserialize)]
+struct AnthropicModel {
+    id: String,
+    #[serde(default)]
+    display_name: Option<String>,
+}
+
+async fn list_anthropic(
+    client: &reqwest::Client,
+    profile: &super::types::AiProfile,
+    api_key: &str,
+) -> Result<Vec<AiModel>, String> {
+    let base = parse_base_url(profile)?;
+    let url = base.join("v1/models").map_err(|e| e.to_string())?;
+
+    let mut req = client
+        .get(url)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01");
+    req = apply_extra_headers(req, profile);
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("model list failed ({status}): {text}"));
+    }
+
+    let parsed: AnthropicResp = resp.json().await.map_err(|e| e.to_string())?;
+    let mut models: Vec<AiModel> = parsed
+        .data
+        .into_iter()
+        .map(|m| AiModel {
+            name: m.display_name.unwrap_or_else(|| m.id.clone()),
+            id: m.id,
+            context_length: None,
+            description: None,
+            input_modalities: None,
+            output_modalities: None,
+            tokenizer: None,
+            prompt_pricing: None,
+            completion_pricing: None,
+            supported_parameters: None,
+            max_completion_tokens: None,
+            reasoning_effort: None,
+            default_reasoning_effort: None,
+        })
+        .collect();
+    models.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(models)
+}
+
+#[derive(serde::Deserialize)]
+struct GeminiResp {
+    models: Option<Vec<GeminiModel>>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiModel {
+    name: String,
+    display_name: Option<String>,
+    description: Option<String>,
+    input_token_limit: Option<u32>,
+}
+
+async fn list_gemini(
+    client: &reqwest::Client,
+    profile: &super::types::AiProfile,
+    api_key: &str,
+) -> Result<Vec<AiModel>, String> {
+    let base = parse_base_url(profile)?;
+    let mut url = base.join("v1beta/models").map_err(|e| e.to_string())?;
+    url.query_pairs_mut().append_pair("key", api_key);
+
+    let mut req = client.get(url);
+    req = apply_extra_headers(req, profile);
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("model list failed ({status}): {text}"));
+    }
+
+    let parsed: GeminiResp = resp.json().await.map_err(|e| e.to_string())?;
+    let mut models: Vec<AiModel> = parsed
+        .models
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| {
+            let id = m
+                .name
+                .strip_prefix("models/")
+                .unwrap_or(&m.name)
+                .to_string();
+            AiModel {
+                name: m.display_name.unwrap_or_else(|| id.clone()),
+                id,
+                context_length: m.input_token_limit,
+                description: m.description,
+                input_modalities: None,
+                output_modalities: None,
+                tokenizer: None,
+                prompt_pricing: None,
+                completion_pricing: None,
+                supported_parameters: None,
+                max_completion_tokens: None,
+                reasoning_effort: None,
+                default_reasoning_effort: None,
+            }
+        })
+        .collect();
+    models.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(models)
+}
+
+fn parse_codex_model_item(value: &serde_json::Value) -> Option<AiModel> {
+    let id = value
+        .get("id")
+        .or_else(|| value.get("model"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())?;
+    let name = value
+        .get("name")
+        .or_else(|| value.get("displayName"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| id.clone());
+    let context_length = value
+        .get("contextLength")
+        .or_else(|| value.get("context_length"))
+        .and_then(|v| v.as_u64())
+        .and_then(|n| u32::try_from(n).ok());
+    let max_completion_tokens = value
+        .get("maxOutputTokens")
+        .or_else(|| value.get("max_completion_tokens"))
+        .and_then(|v| v.as_u64())
+        .and_then(|n| u32::try_from(n).ok());
+    let parse_effort_option = |entry: &serde_json::Value| -> Option<AiReasoningEffortOption> {
+        if let Some(text) = entry.as_str() {
+            let effort = text.trim();
+            if effort.is_empty() {
+                return None;
+            }
+            return Some(AiReasoningEffortOption {
+                effort: effort.to_string(),
+                description: None,
+            });
+        }
+
+        let effort = entry
+            .get("effort")
+            .or_else(|| entry.get("reasoningEffort"))
+            .or_else(|| entry.get("id"))
+            .or_else(|| entry.get("value"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())?;
+
+        let description = entry
+            .get("description")
+            .or_else(|| entry.get("label"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        Some(AiReasoningEffortOption {
+            effort: effort.to_string(),
+            description,
+        })
+    };
+    let reasoning_effort_value = value
+        .get("reasoningEffort")
+        .or_else(|| value.get("reasoning_effort"))
+        .or_else(|| value.get("supportedReasoningEfforts"))
+        .or_else(|| value.get("reasoning"))
+        .or_else(|| value.get("effortOptions"));
+    let reasoning_effort = if let Some(arr) = reasoning_effort_value.and_then(|v| v.as_array()) {
+        Some(
+            arr.iter()
+                .filter_map(parse_effort_option)
+                .collect::<Vec<_>>(),
+        )
+    } else if let Some(obj) = reasoning_effort_value.and_then(|v| v.as_object()) {
+        obj.get("available")
+            .or_else(|| obj.get("options"))
+            .or_else(|| obj.get("supported"))
+            .or_else(|| obj.get("values"))
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(parse_effort_option)
+                    .collect::<Vec<_>>()
+            })
+    } else {
+        None
+    }
+    .filter(|arr| !arr.is_empty());
+    let default_reasoning_effort = value
+        .get("defaultReasoningEffort")
+        .or_else(|| value.get("default_reasoning_effort"))
+        .or_else(|| value.pointer("/reasoningEffort/default"))
+        .or_else(|| value.pointer("/reasoning/default"))
+        .or_else(|| value.pointer("/reasoning/defaultEffort"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    Some(AiModel {
+        id,
+        name,
+        context_length,
+        description: value
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        input_modalities: value
+            .get("inputModalities")
+            .or_else(|| value.get("input_modalities"))
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|entry| entry.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .filter(|arr| !arr.is_empty()),
+        output_modalities: value
+            .get("outputModalities")
+            .or_else(|| value.get("output_modalities"))
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|entry| entry.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .filter(|arr| !arr.is_empty()),
+        tokenizer: None,
+        prompt_pricing: None,
+        completion_pricing: None,
+        supported_parameters: None,
+        max_completion_tokens,
+        reasoning_effort,
+        default_reasoning_effort,
+    })
+}
+
+fn list_codex_models(codex_state: &CodexState) -> Result<Vec<AiModel>, String> {
+    let result = rpc_call(
+        codex_state,
+        "model/list",
+        serde_json::json!({}),
+        std::time::Duration::from_secs(20),
+    )?;
+
+    let list = if let Some(arr) = result.as_array() {
+        arr
+    } else if let Some(arr) = result.get("items").and_then(|v| v.as_array()) {
+        arr
+    } else if let Some(arr) = result.get("models").and_then(|v| v.as_array()) {
+        arr
+    } else if let Some(arr) = result.get("data").and_then(|v| v.as_array()) {
+        arr
+    } else {
+        return Err("codex model/list returned no model array".to_string());
+    };
+
+    let mut models: Vec<AiModel> = list.iter().filter_map(parse_codex_model_item).collect();
+    models.sort_by(|a, b| a.name.cmp(&b.name));
+    if models.is_empty() {
+        return Err("codex model/list returned an empty model set".to_string());
+    }
+    Ok(models)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn ai_models_list(
+    app: AppHandle,
+    codex_state: State<'_, CodexState>,
+    space_state: State<'_, SpaceState>,
+    profile_id: String,
+    provider: Option<AiProviderKind>,
+) -> Result<Vec<AiModel>, String> {
+    let path = store_path(&app)?;
+    let mut store = read_store(&path);
+    ensure_default_profiles(&mut store);
+    let space_root = space_state.current_root().ok();
+    let _ = write_store(&path, &store);
+
+    let profile = store
+        .profiles
+        .iter()
+        .find(|p| p.id == profile_id)
+        .cloned()
+        .ok_or_else(|| "unknown profile".to_string())?;
+    let effective_provider = provider.unwrap_or_else(|| profile.provider.clone());
+
+    let client = http_client()?;
+    let api_key = space_root
+        .as_deref()
+        .and_then(|root| local_secrets::secret_get(root, &profile.id).ok().flatten())
+        .unwrap_or_default();
+    let api_key = api_key.trim().to_string();
+
+    let needs_key = matches!(
+        effective_provider,
+        AiProviderKind::Openai
+            | AiProviderKind::Openrouter
+            | AiProviderKind::Anthropic
+            | AiProviderKind::Gemini
+    );
+    if needs_key && api_key.is_empty() {
+        return Err("API key not set for this profile".to_string());
+    }
+
+    match effective_provider {
+        AiProviderKind::Openai | AiProviderKind::OpenaiCompat | AiProviderKind::Ollama => {
+            list_openai_like(&client, &profile, &api_key).await
+        }
+        AiProviderKind::Openrouter => list_openrouter(&client, &profile, &api_key).await,
+        AiProviderKind::Anthropic => list_anthropic(&client, &profile, &api_key).await,
+        AiProviderKind::Gemini => list_gemini(&client, &profile, &api_key).await,
+        AiProviderKind::CodexChatgpt => list_codex_models(codex_state.inner()),
+    }
+}

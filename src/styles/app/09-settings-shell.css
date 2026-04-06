@@ -1,0 +1,238 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   SETTINGS WINDOW
+   ───────────────────────────────────────────────────────────────────────────── */
+.settingsShell {
+	--app-radius: var(--radius-15);
+	position: relative;
+	height: 100%;
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	background: var(--bg-primary);
+	border-radius: var(--app-radius);
+	overflow: hidden;
+}
+
+.settingsBackdrop {
+	display: none;
+	pointer-events: none;
+}
+
+.settingsDragStrip {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 42px;
+	z-index: 10;
+	-webkit-app-region: drag;
+}
+
+.settingsWindowClose {
+	position: absolute;
+	top: 8px;
+	right: 10px;
+	z-index: 20;
+	-webkit-app-region: no-drag;
+}
+
+.settingsMain {
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+	display: flex;
+	align-items: stretch;
+	justify-content: flex-start;
+	position: relative;
+	z-index: 1;
+}
+
+.settingsFrame {
+	width: 100%;
+	height: 100%;
+	display: grid;
+	grid-template-columns: 236px minmax(0, 1fr);
+	background: var(--bg-primary);
+	overflow: hidden;
+}
+
+.settingsTabs {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 44px 14px 14px;
+	background: var(--bg-secondary);
+	border-right: 1px solid var(--border-light);
+}
+
+.settingsNavHeader {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 0 4px 6px;
+}
+
+.settingsNavTitle {
+	font-size: 18px;
+	font-weight: var(--font-semibold);
+	letter-spacing: -0.018em;
+	color: var(--text-primary);
+	line-height: 1.1;
+}
+
+.settingsNavMeta {
+	font-size: 12px;
+	line-height: 1.35;
+	color: var(--text-secondary);
+}
+
+.settingsTabButton {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 10px;
+	min-height: 36px;
+	padding: 0 10px;
+	border-radius: var(--radius-md);
+	border: 1px solid transparent;
+	color: var(--text-secondary);
+	background: transparent;
+	font-size: 12px;
+	font-weight: var(--font-medium);
+	line-height: 1;
+	transition: background var(--transition-base), border-color
+		var(--transition-base), color var(--transition-base);
+}
+
+.settingsTabIcon {
+	height: 18px;
+	width: 18px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-tertiary);
+	flex: 0 0 auto;
+	transition: color var(--transition-base);
+}
+
+.settingsTabLabel {
+	min-width: 0;
+	flex: 1;
+	text-align: left;
+}
+
+.settingsTabButton:hover {
+	color: var(--text-primary);
+	background: var(--bg-primary);
+	border-color: var(--border-light);
+}
+
+.settingsTabButton.active {
+	color: var(--text-primary);
+	background: var(--bg-primary);
+	border-color: var(--border-default);
+}
+
+.settingsTabButton.active .settingsTabIcon {
+	color: var(--text-primary);
+}
+
+.settingsTabPanel {
+	min-width: 0;
+	height: 100%;
+	overflow-x: hidden;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	padding: 36px 24px 24px;
+	background: var(--bg-primary);
+}
+
+.settingsPanelHeader {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 0 0 16px;
+	background: transparent;
+}
+
+.settingsPanelHeader::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 1px;
+	background: var(--border-light);
+}
+
+.settingsPanelTitle {
+	margin: 0;
+	font-size: 21px;
+	font-weight: var(--font-semibold);
+	letter-spacing: -0.02em;
+	color: var(--text-primary);
+	line-height: 1.2;
+}
+
+.settingsPanelSubtitle {
+	margin: 0;
+	max-width: 62ch;
+	font-size: 12px;
+	line-height: 1.45;
+	color: var(--text-secondary);
+}
+
+.settingsPane {
+	width: 100%;
+	max-width: 920px;
+	margin: 0 auto;
+}
+
+.settingsGrid {
+	display: flex;
+	flex-direction: column;
+	gap: 34px;
+}
+
+@media (max-width: 900px) {
+	.settingsFrame {
+		grid-template-columns: 214px minmax(0, 1fr);
+	}
+
+	.settingsTabPanel {
+		padding: 44px 18px 18px;
+	}
+}
+
+@media (max-width: 720px) {
+	.settingsFrame {
+		grid-template-columns: 1fr;
+		grid-template-rows: auto 1fr;
+	}
+
+	.settingsTabs {
+		padding: 44px 10px 10px;
+		border-right: 0;
+		border-bottom: 1px solid var(--border-light);
+	}
+
+	.settingsTabPanel {
+		padding: 12px;
+	}
+
+	.settingsPanelHeader {
+		position: relative;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.settingsWindowClose,
+	.settingsTabButton,
+	.settingsTabIcon {
+		transition: none;
+	}
+}
