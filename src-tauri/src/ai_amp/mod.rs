@@ -243,7 +243,8 @@ pub async fn run_with_amp(
         },
     );
 
-    let mut child = Command::new(binary)
+    let mut command = Command::new(binary);
+    command
         .arg("--no-color")
         .arg("--dangerously-allow-all")
         .arg("--mode")
@@ -253,7 +254,9 @@ pub async fn run_with_amp(
         .arg("--stream-json")
         .current_dir(root)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    crate::utils::hide_console_window_tokio(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|e| format!("failed to start amp: {e}"))?;
 

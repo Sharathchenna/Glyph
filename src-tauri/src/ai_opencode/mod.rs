@@ -105,13 +105,16 @@ async fn start_server_on_port(root: &Path, binary: &Path) -> Result<OpenCodeServ
         .user_agent("Glyph/0.1 (opencode)")
         .build()
         .map_err(|e| e.to_string())?;
-    let mut child = Command::new(binary)
+    let mut command = Command::new(binary);
+    command
         .arg("serve")
         .arg("--hostname=127.0.0.1")
         .arg(format!("--port={port}"))
         .current_dir(root)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    crate::utils::hide_console_window_tokio(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|e| format!("failed to start opencode: {e}"))?;
 

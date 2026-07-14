@@ -28,6 +28,7 @@ pub enum RepoInspection {
 }
 
 fn run_command(mut command: Command) -> Result<(bool, String, String), String> {
+    crate::utils::hide_console_window(&mut command);
     let mut child = command
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "never")

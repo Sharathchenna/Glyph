@@ -199,7 +199,7 @@ pub async fn space_open_window(
 
     install_window_session(app.clone(), &state, label.clone(), root.clone())?;
 
-    let window = match WebviewWindowBuilder::new(
+    let window_builder = WebviewWindowBuilder::new(
         &app,
         &label,
         WebviewUrl::App(format!("index.html?window={label}").into()),
@@ -211,13 +211,16 @@ pub async fn space_open_window(
         window_geometry::MIN_INNER_HEIGHT as f64,
     )
     .decorations(true)
-    .title_bar_style(tauri::TitleBarStyle::Overlay)
-    .hidden_title(true)
-    .transparent(true)
     .shadow(true)
-    .center()
-    .build()
-    {
+    .center();
+
+    #[cfg(target_os = "macos")]
+    let window_builder = window_builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .transparent(true);
+
+    let window = match window_builder.build() {
         Ok(window) => window,
         Err(error) => {
             let _ = state.remove_window_session(&label);

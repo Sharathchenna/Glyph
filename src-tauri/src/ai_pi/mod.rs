@@ -226,6 +226,7 @@ async fn spawn_rpc(
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    crate::utils::hide_console_window_tokio(&mut command);
     if let Some(path) = runtime_path {
         command.env("PATH", path);
     }

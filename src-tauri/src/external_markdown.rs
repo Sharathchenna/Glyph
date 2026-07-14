@@ -122,7 +122,7 @@ pub fn open_external_markdown_window(
             },
         );
 
-    let window_result = WebviewWindowBuilder::new(
+    let window_builder = WebviewWindowBuilder::new(
         app,
         &label,
         WebviewUrl::App(format!("index.html?window={label}").into()),
@@ -132,12 +132,16 @@ pub fn open_external_markdown_window(
     .min_inner_size(EXTERNAL_MARKDOWN_MIN_WIDTH, EXTERNAL_MARKDOWN_MIN_HEIGHT)
     .resizable(true)
     .decorations(true)
-    .title_bar_style(tauri::TitleBarStyle::Overlay)
-    .hidden_title(true)
-    .transparent(true)
     .shadow(true)
-    .center()
-    .build();
+    .center();
+
+    #[cfg(target_os = "macos")]
+    let window_builder = window_builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .transparent(true);
+
+    let window_result = window_builder.build();
 
     let window = match window_result {
         Ok(window) => window,

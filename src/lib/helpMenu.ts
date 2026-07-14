@@ -7,7 +7,7 @@ export const GLYPH_LINKS = {
 	privacy: "https://glyphformac.com/privacy",
 	terms: "https://glyphformac.com/terms",
 	discord: "https://discord.gg/cNqrBfFx7D",
-	github: "https://github.com/SidhuK/Glyph",
+	github: "https://github.com/Sharathchenna/Glyph",
 	x: "https://x.com/karat_sidhu",
 } as const;
 

@@ -1,0 +1,22 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"app": {
+		"windows": [
+			{
+				"label": "main",
+				"create": false,
+				"visible": false,
+				"title": "Glyph",
+				"width": 800,
+				"height": 600,
+				"minWidth": 680,
+				"minHeight": 460,
+				"decorations": true,
+				"transparent": false
+			}
+		]
+	},
+	"bundle": {
+		"targets": ["nsis"]
+	}
+}

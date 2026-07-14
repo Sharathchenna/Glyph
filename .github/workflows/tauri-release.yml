@@ -35,12 +35,19 @@ jobs:
             echo "should_release=false" >> "$GITHUB_OUTPUT"
           fi
 
-  build-and-release:
+  prepare:
     needs: release-gate
     if: needs.release-gate.outputs.should_release == 'true'
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      latest_tag: ${{ steps.version.outputs.latest_tag }}
+      next_version: ${{ steps.version.outputs.next_version }}
+      next_tag: ${{ steps.version.outputs.next_tag }}
+      channel: ${{ steps.version.outputs.channel }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      release_body: ${{ steps.release_notes.outputs.body }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,31 +58,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.28.2
-
-      - name: Resolve pnpm store path
-        id: pnpm-store
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-store.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
 
       - name: Compute next version
         id: version
@@ -165,39 +147,6 @@ jobs:
           echo "channel=${channel}" >> "$GITHUB_OUTPUT"
           echo "is_prerelease=${is_prerelease}" >> "$GITHUB_OUTPUT"
 
-      - name: Sync version files
-        env:
-          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
-        run: |
-          set -euo pipefail
-
-          node -e '
-            const fs = require("fs");
-            const next = process.env.NEXT_VERSION;
-
-            const pkgPath = "package.json";
-            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-            pkg.version = next;
-            fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, "\t")}\n`);
-
-            const tauriPath = "src-tauri/tauri.conf.json";
-            const tauri = JSON.parse(fs.readFileSync(tauriPath, "utf8"));
-            tauri.version = next;
-            fs.writeFileSync(tauriPath, `${JSON.stringify(tauri, null, "\t")}\n`);
-          '
-
-          sed -i.bak -E "0,/^version = \"[^\"]+\"/s//version = \"${NEXT_VERSION}\"/" src-tauri/Cargo.toml
-          rm -f src-tauri/Cargo.toml.bak
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Format updated version files
-        run: pnpm exec biome format --write package.json src-tauri/tauri.conf.json
-
-      - name: Check formatting and lint
-        run: pnpm check
-
       - name: Generate GitHub release notes
         id: release_notes
         env:
@@ -263,14 +212,87 @@ jobs:
           });
           NODE
 
+  build-macos:
+    needs: prepare
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Sync version files
+        env:
+          NEXT_VERSION: ${{ needs.prepare.outputs.next_version }}
+        run: |
+          set -euo pipefail
+
+          node -e '
+            const fs = require("fs");
+            const next = process.env.NEXT_VERSION;
+
+            const pkgPath = "package.json";
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+            pkg.version = next;
+            fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, "\t")}\n`);
+
+            const tauriPath = "src-tauri/tauri.conf.json";
+            const tauri = JSON.parse(fs.readFileSync(tauriPath, "utf8"));
+            tauri.version = next;
+            fs.writeFileSync(tauriPath, `${JSON.stringify(tauri, null, "\t")}\n`);
+
+            const cargoPath = "src-tauri/Cargo.toml";
+            const cargo = fs.readFileSync(cargoPath, "utf8");
+            fs.writeFileSync(
+              cargoPath,
+              cargo.replace(/^version = "[^"]+"/m, `version = "${next}"`),
+            );
+          '
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format updated version files
+        run: pnpm exec biome format --write package.json src-tauri/tauri.conf.json
+
+      - name: Check formatting and lint
+        run: pnpm check
+
       - name: Build and publish release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GLYPH_OFFICIAL_BUILD: "1"
-          GLYPH_GUMROAD_PRODUCT_ID: "jfc0rwnuPw7VuqCyw5ctTw=="
-          GLYPH_GUMROAD_PRODUCT_URL: "https://karatsidhu.gumroad.com/l/sqxfay"
-          GLYPH_SUPPORT_URL: "https://github.com/SidhuK/Glyph/issues"
+          GLYPH_SUPPORT_URL: "https://github.com/Sharathchenna/Glyph/issues"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -281,18 +303,121 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_PROVIDER_SHORT_NAME: ${{ secrets.APPLE_PROVIDER_SHORT_NAME }}
         with:
-          tagName: ${{ steps.version.outputs.next_tag }}
-          releaseName: "Glyph ${{ steps.version.outputs.next_tag }}"
-          releaseBody: ${{ steps.release_notes.outputs.body }}
+          tagName: ${{ needs.prepare.outputs.next_tag }}
+          releaseName: "Glyph ${{ needs.prepare.outputs.next_tag }}"
+          releaseBody: ${{ needs.prepare.outputs.release_body }}
           releaseDraft: false
-          prerelease: ${{ steps.version.outputs.is_prerelease }}
+          prerelease: ${{ needs.prepare.outputs.is_prerelease }}
           includeUpdaterJson: true
+
+  build-windows:
+    needs: [prepare, build-macos]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Sync version files
+        shell: bash
+        env:
+          NEXT_VERSION: ${{ needs.prepare.outputs.next_version }}
+        run: |
+          set -euo pipefail
+
+          node -e '
+            const fs = require("fs");
+            const next = process.env.NEXT_VERSION;
+
+            const pkgPath = "package.json";
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+            pkg.version = next;
+            fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, "\t")}\n`);
+
+            const tauriPath = "src-tauri/tauri.conf.json";
+            const tauri = JSON.parse(fs.readFileSync(tauriPath, "utf8"));
+            tauri.version = next;
+            fs.writeFileSync(tauriPath, `${JSON.stringify(tauri, null, "\t")}\n`);
+
+            const cargoPath = "src-tauri/Cargo.toml";
+            const cargo = fs.readFileSync(cargoPath, "utf8");
+            fs.writeFileSync(
+              cargoPath,
+              cargo.replace(/^version = "[^"]+"/m, `version = "${next}"`),
+            );
+          '
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GLYPH_SUPPORT_URL: "https://github.com/Sharathchenna/Glyph/issues"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ needs.prepare.outputs.next_tag }}
+          releaseName: "Glyph ${{ needs.prepare.outputs.next_tag }}"
+          releaseBody: ${{ needs.prepare.outputs.release_body }}
+          releaseDraft: false
+          prerelease: ${{ needs.prepare.outputs.is_prerelease }}
+          includeUpdaterJson: true
+
+  publish-updater-manifest:
+    needs: [prepare, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
       - name: Publish updater manifest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CHANNEL: ${{ steps.version.outputs.channel }}
-          NEXT_TAG: ${{ steps.version.outputs.next_tag }}
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+          NEXT_TAG: ${{ needs.prepare.outputs.next_tag }}
         run: |
           set -euo pipefail
 
@@ -379,22 +504,3 @@ jobs:
 
           git -C "${manifest_worktree}" commit -m "Update ${CHANNEL} updater manifests for ${NEXT_TAG}"
           git -C "${manifest_worktree}" push origin HEAD:update-manifests
-
-      - name: Notify Homebrew tap
-        if: steps.version.outputs.channel == 'stable'
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_DISPATCH_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${GH_TOKEN}" ]; then
-            echo "HOMEBREW_TAP_DISPATCH_TOKEN is not configured."
-            exit 1
-          fi
-
-          curl --fail --silent --show-error \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            https://api.github.com/repos/SidhuK/homebrew-glyph/dispatches \
-            -d '{"event_type":"glyph_release_published"}'

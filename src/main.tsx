@@ -33,6 +33,7 @@ import {
 	loadSettings,
 	reloadFromDisk,
 } from "./lib/settings";
+import { getPlatform } from "./lib/shortcuts/platform";
 import { invoke } from "./lib/tauri";
 import { useTauriEvent } from "./lib/tauriEvents";
 import {
@@ -308,6 +309,8 @@ if (import.meta.env.PROD) {
 		}
 	});
 }
+
+document.documentElement.dataset.platform = getPlatform();
 
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Missing #root element");

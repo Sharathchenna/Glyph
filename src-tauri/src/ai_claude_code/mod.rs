@@ -156,7 +156,10 @@ fn collect_models_from_runtime(
     models: &mut Vec<String>,
     seen: &mut HashSet<String>,
 ) {
-    if let Ok(output) = StdCommand::new(binary).arg("--help").output() {
+    let mut help_command = StdCommand::new(binary);
+    help_command.arg("--help");
+    crate::utils::hide_console_window(&mut help_command);
+    if let Ok(output) = help_command.output() {
         collect_models_from_runtime_text(&String::from_utf8_lossy(&output.stdout), models, seen);
         collect_models_from_runtime_text(&String::from_utf8_lossy(&output.stderr), models, seen);
     }
@@ -648,6 +651,7 @@ pub async fn run_with_claude_code(
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    crate::utils::hide_console_window_tokio(&mut command);
 
     match mode {
         AiAssistantMode::Chat => {

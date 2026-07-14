@@ -107,7 +107,9 @@ impl CodexState {
                 candidates.push(dir.join("codex"));
             }
         }
-        if let Some(home) = std::env::var_os("HOME") {
+        if let Some(home) = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+        {
             let home = PathBuf::from(home);
             candidates.push(home.join(".bun/bin/codex"));
             candidates.push(home.join(".npm-global/bin/codex"));
@@ -116,6 +118,33 @@ impl CodexState {
         candidates.push(PathBuf::from("/opt/homebrew/bin/codex"));
         candidates.push(PathBuf::from("/usr/local/bin/codex"));
         candidates.push(PathBuf::from("/usr/bin/codex"));
+        #[cfg(windows)]
+        {
+            // npm installs the codex shim as %APPDATA%\npm\codex.cmd; a bare
+            // "codex" candidate never matches on Windows, so expand extensions.
+            if let Some(appdata) = std::env::var_os("APPDATA") {
+                candidates.push(PathBuf::from(appdata).join("npm").join("codex"));
+            }
+            let mut expanded: Vec<PathBuf> = Vec::new();
+            for path in candidates {
+                if path.extension().is_some() {
+                    if !expanded.contains(&path) {
+                        expanded.push(path);
+                    }
+                    continue;
+                }
+                for ext in ["exe", "cmd", "bat"] {
+                    let with_ext = path.with_extension(ext);
+                    if !expanded.contains(&with_ext) {
+                        expanded.push(with_ext);
+                    }
+                }
+                if !expanded.contains(&path) {
+                    expanded.push(path);
+                }
+            }
+            candidates = expanded;
+        }
         candidates
     }
 
@@ -154,11 +183,14 @@ impl CodexState {
 
     fn spawn_process(&self) -> Result<RuntimeProcess, String> {
         let codex_bin = Self::resolve_codex_binary()?;
-        let mut child = Command::new(&codex_bin)
+        let mut command = Command::new(&codex_bin);
+        command
             .args(["app-server", "--listen", "stdio://"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        crate::utils::hide_console_window(&mut command);
+        let mut child = command
             .spawn()
             .map_err(|e| {
                 format!(

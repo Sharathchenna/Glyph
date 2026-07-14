@@ -8,6 +8,7 @@ import {
 	type UiFontSize,
 	isUiAccent,
 } from "./settings";
+import { getPlatform } from "./shortcuts/platform";
 import type { UiThemeColorOverrides } from "./themeColors";
 import {
 	type UiDarkThemeId,
@@ -251,9 +252,12 @@ export function applyUiSurfacePreferences(options: {
 	translucentApp: boolean;
 }): void {
 	const root = document.documentElement;
-	root.dataset.translucentSidebar = String(options.translucentApp);
-	root.dataset.translucentAppFrame = String(options.translucentApp);
-	root.dataset.translucentAiPanel = String(options.translucentApp);
+	// Window vibrancy only exists on macOS; other platforms render an opaque
+	// window, where translucent surfaces would expose the webview background.
+	const translucent = options.translucentApp && getPlatform() === "macos";
+	root.dataset.translucentSidebar = String(translucent);
+	root.dataset.translucentAppFrame = String(translucent);
+	root.dataset.translucentAiPanel = String(translucent);
 }
 
 export function applyEditorWidthMode(mode: EditorWidthMode): void {

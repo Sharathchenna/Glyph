@@ -4,9 +4,9 @@ use tauri_plugin_updater::UpdaterExt;
 use url::Url;
 
 const STABLE_UPDATE_ENDPOINT: &str =
-    "https://raw.githubusercontent.com/SidhuK/Glyph/update-manifests/stable/latest.json";
+    "https://raw.githubusercontent.com/Sharathchenna/Glyph/update-manifests/stable/latest.json";
 const ALPHA_UPDATE_ENDPOINT: &str =
-    "https://raw.githubusercontent.com/SidhuK/Glyph/update-manifests/alpha/latest.json";
+    "https://raw.githubusercontent.com/Sharathchenna/Glyph/update-manifests/alpha/latest.json";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "lowercase")]
