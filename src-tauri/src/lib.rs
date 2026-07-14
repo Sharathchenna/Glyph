@@ -1026,6 +1026,7 @@ fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
     show_main_window_for_app(&app)
 }
 
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn open_external_markdown_from_finder(app: &tauri::AppHandle, path: std::path::PathBuf) {
     let state = app.state::<external_markdown::ExternalMarkdownState>();
     if let Err(error) = external_markdown::open_external_markdown_window(app, &state, path, None)
@@ -1034,12 +1035,14 @@ fn open_external_markdown_from_finder(app: &tauri::AppHandle, path: std::path::P
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn has_external_markdown_windows(app: &tauri::AppHandle) -> bool {
     app.webview_windows()
         .keys()
         .any(|label| external_markdown::is_external_markdown_window(label))
 }
 
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn handle_opened_urls(app: &tauri::AppHandle, urls: Vec<url::Url>) -> bool {
     for url in urls {
         if url.scheme() != "file" {
@@ -1658,6 +1661,11 @@ pub fn run() {
         .expect("error while building tauri application")
         .run({
             let mut initial_launch_pending = true;
+            // Only mutated by the macOS/iOS Opened arm below.
+            #[cfg_attr(
+                not(any(target_os = "macos", target_os = "ios")),
+                allow(unused_mut)
+            )]
             let mut initial_launch_received_file_open = false;
             move |app_handle, event| match event {
                 RunEvent::ExitRequested { api, .. } => {
@@ -1668,6 +1676,7 @@ pub fn run() {
                 RunEvent::Exit => {
                     window_geometry::flush_host_window_geometry(app_handle);
                 }
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
                 RunEvent::Opened { urls } => {
                     let received_file_open = handle_opened_urls(app_handle, urls);
                     if initial_launch_pending {
