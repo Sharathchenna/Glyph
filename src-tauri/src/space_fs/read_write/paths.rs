@@ -294,9 +294,22 @@ fn reveal_file_manager_path(abs: &Path) -> Result<(), String> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn reveal_file_manager_path(abs: &Path) -> Result<(), String> {
+    let mut command = std::process::Command::new("explorer");
+    command.arg("/select,").arg(abs);
+    crate::utils::hide_console_window(&mut command);
+    // explorer.exe frequently reports a nonzero exit code even on success,
+    // so only spawn failures are treated as errors.
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("failed to reveal path in Explorer: {e}"))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn reveal_file_manager_path(_abs: &Path) -> Result<(), String> {
-    Err("revealing paths in Finder is only available on macOS".to_string())
+    Err("revealing paths in the file manager is not supported on this platform".to_string())
 }
 
 #[tauri::command]

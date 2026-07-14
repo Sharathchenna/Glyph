@@ -3,7 +3,7 @@ import type { Shortcut } from "./types";
 
 let cachedPlatform: "macos" | "windows" | "linux" | null = null;
 
-function getPlatform(): "macos" | "windows" | "linux" {
+export function getPlatform(): "macos" | "windows" | "linux" {
 	if (cachedPlatform) return cachedPlatform;
 
 	if (typeof navigator !== "undefined") {

@@ -46,7 +46,9 @@ use tracing::{error, warn};
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, clear_vibrancy, NSVisualEffectMaterial};
 
-use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
+#[cfg(target_os = "macos")]
+use tauri::TitleBarStyle;
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 static RECENT_SPACES_MENU_REVISION: AtomicU64 = AtomicU64::new(0);
 static QUICK_NOTE_WINDOW_LOCK: Mutex<()> = Mutex::new(());
@@ -866,7 +868,7 @@ fn quick_note_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, Str
         return Ok(window);
     }
 
-    let window = WebviewWindowBuilder::new(
+    let builder = WebviewWindowBuilder::new(
         app,
         QUICK_NOTE_WINDOW_LABEL,
         WebviewUrl::App(format!("index.html?window={QUICK_NOTE_WINDOW_LABEL}").into()),
@@ -875,17 +877,20 @@ fn quick_note_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, Str
     .inner_size(680.0, 440.0)
     .resizable(true)
     .decorations(true)
-    .title_bar_style(TitleBarStyle::Overlay)
-    .hidden_title(true)
-    .transparent(true)
     .always_on_top(true)
     .visible_on_all_workspaces(true)
     .skip_taskbar(true)
     .shadow(true)
     .visible(false)
-    .center()
-    .build()
-    .map_err(|error| error.to_string())?;
+    .center();
+
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .transparent(true);
+
+    let window = builder.build().map_err(|error| error.to_string())?;
 
     #[cfg(target_os = "macos")]
     apply_main_window_vibrancy(&window, None)?;

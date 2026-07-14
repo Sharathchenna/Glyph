@@ -123,7 +123,9 @@ pub(crate) fn build_status_for(
         return LicenseStatus {
             mode: LicenseMode::CommunityBuild,
             can_use_app: true,
-            can_auto_update: false,
+            // This fork ships its own signed updater manifests, so community
+            // builds are allowed to auto-update.
+            can_auto_update: true,
             is_official_build: false,
             purchase_url: gumroad_product_url().to_string(),
             support_url: support_url().to_string(),
@@ -273,11 +275,11 @@ mod tests {
     }
 
     #[test]
-    fn build_status_reports_community_build_without_auto_updates() {
+    fn build_status_reports_community_build_with_auto_updates() {
         let status = build_status_for(&LicenseRecord::default(), 5_000, false);
 
         assert_eq!(status.mode, LicenseMode::CommunityBuild);
         assert!(status.can_use_app);
-        assert!(!status.can_auto_update);
+        assert!(status.can_auto_update);
     }
 }

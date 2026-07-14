@@ -180,6 +180,36 @@ fn push_path_once(paths: &mut Vec<PathBuf>, path: PathBuf) {
     paths.push(path);
 }
 
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+/// npm on Windows installs global CLI shims (claude.cmd, codex.cmd, ...) here.
+#[cfg(windows)]
+fn windows_npm_global_dir() -> Option<PathBuf> {
+    env::var_os("APPDATA").map(|appdata| PathBuf::from(appdata).join("npm"))
+}
+
+/// A bare binary name never matches on Windows; expand each extensionless
+/// candidate with the executable extensions npm and native installers use.
+#[cfg(windows)]
+fn expand_windows_executable_extensions(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut expanded = Vec::new();
+    for path in paths {
+        if path.extension().is_some() {
+            push_path_once(&mut expanded, path);
+            continue;
+        }
+        for ext in ["exe", "cmd", "bat"] {
+            push_path_once(&mut expanded, path.with_extension(ext));
+        }
+        push_path_once(&mut expanded, path);
+    }
+    expanded
+}
+
 pub fn cli_runtime_path(binary: &Path) -> Option<OsString> {
     let mut paths = Vec::new();
 
@@ -206,7 +236,7 @@ pub fn cli_runtime_path(binary: &Path) -> Option<OsString> {
     ] {
         push_path_once(&mut paths, PathBuf::from(path));
     }
-    if let Some(home) = env::var_os("HOME").map(PathBuf::from) {
+    if let Some(home) = home_dir() {
         for path in [
             home.join(".local/bin"),
             home.join(".bun/bin"),
@@ -215,6 +245,10 @@ pub fn cli_runtime_path(binary: &Path) -> Option<OsString> {
         ] {
             push_path_once(&mut paths, path);
         }
+    }
+    #[cfg(windows)]
+    if let Some(npm_dir) = windows_npm_global_dir() {
+        push_path_once(&mut paths, npm_dir);
     }
 
     env::join_paths(paths).ok()
@@ -231,12 +265,19 @@ pub fn candidate_cli_paths(env_var_name: &str, binary_name: &str) -> Vec<PathBuf
     paths.push(PathBuf::from(format!("/opt/homebrew/bin/{binary_name}")));
     paths.push(PathBuf::from(format!("/usr/local/bin/{binary_name}")));
     paths.push(PathBuf::from(format!("/usr/bin/{binary_name}")));
-    if let Some(home) = env::var_os("HOME").map(PathBuf::from) {
+    if let Some(home) = home_dir() {
         paths.push(home.join(format!(".local/bin/{binary_name}")));
         paths.push(home.join(format!(".{binary_name}/bin/{binary_name}")));
         paths.push(home.join(format!(".bun/bin/{binary_name}")));
         paths.push(home.join(format!(".npm-global/bin/{binary_name}")));
         paths.push(home.join(format!(".volta/bin/{binary_name}")));
+    }
+    #[cfg(windows)]
+    {
+        if let Some(npm_dir) = windows_npm_global_dir() {
+            paths.push(npm_dir.join(binary_name));
+        }
+        paths = expand_windows_executable_extensions(paths);
     }
     paths
 }

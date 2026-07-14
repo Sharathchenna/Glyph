@@ -125,3 +125,25 @@ pub fn now_ms() -> u64 {
         .unwrap_or_default()
         .as_millis() as u64
 }
+
+/// CREATE_NO_WINDOW: keeps spawned console processes (git, AI CLIs) from
+/// flashing a terminal window on Windows.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[cfg(windows)]
+pub fn hide_console_window(command: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+pub fn hide_console_window(_command: &mut std::process::Command) {}
+
+#[cfg(windows)]
+pub fn hide_console_window_tokio(command: &mut tokio::process::Command) {
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+pub fn hide_console_window_tokio(_command: &mut tokio::process::Command) {}
